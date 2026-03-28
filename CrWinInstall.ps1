@@ -48,7 +48,8 @@ function Invoke-DownloadString {
     # Attempt 3: bun — prerequisite, bundles BoringSSL (OpenSSL-compatible)
     if (Get-Command bun -ErrorAction SilentlyContinue) {
         try {
-            $out = (& bun -e "fetch('$Uri').then(r=>r.text()).then(t=>process.stdout.write(t.trim()))" 2>&1) |
+			$jsUri = $Uri -replace '\\', '\\\\' -replace "'", "\'"
+            $out = (& bun -e "fetch('$jsUri').then(r=>r.text()).then(t=>process.stdout.write(t.trim()))" 2>&1) |
                        Where-Object { $_ -is [string] }
             if ($LASTEXITCODE -eq 0 -and $out) { return ($out -join '').Trim() }
         } catch {}
@@ -92,8 +93,9 @@ function Invoke-DownloadFile {
         try {
             # Escape backslashes for the JS string literal
             $jsDest = $Destination -replace '\\', '\\\\'
+			$jsUri = $Uri -replace '\\', '\\\\' -replace "'", "\'"
             $null = & bun -e @"
-const r = await fetch('$Uri');
+const r = await fetch('$jsUri');
 if (!r.ok) throw new Error('HTTP ' + r.status);
 const buf = await r.arrayBuffer();
 require('fs').writeFileSync('$jsDest', Buffer.from(buf));
