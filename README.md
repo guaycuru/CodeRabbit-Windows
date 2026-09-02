@@ -25,7 +25,7 @@ The official [CodeRabbit CLI](https://coderabbit.ai/cli) provides free AI-powere
 
 This project is an **unofficial community port** that:
 1. Downloads the official CodeRabbit CLI Linux binary.
-2. Uses [`bun-decompile`](https://github.com/shepherdjerred/bun-decompile) to extract the embedded JavaScript bundle.
+2. Uses [`bun-decompile-ag`](https://github.com/andrewgross/bun-decompile-ag) to extract the embedded JavaScript bundle.
 3. Resolves native Windows dependencies.
 4. Cross-compiles it into a standalone `coderabbit.exe` using [Bun](https://bun.sh).
 
