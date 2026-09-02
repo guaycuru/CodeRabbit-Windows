@@ -227,11 +227,12 @@ try {
     # --- 4. Decompile Binary ---
     Write-Host "`n[*] Unpacking CodeRabbit bundle natively..."
     Set-Location $TempDir
-    bun install @shepherdjerred/bun-decompile --silent
-    $decompileOutput = bunx @shepherdjerred/bun-decompile $LinuxBinary 2>&1 | Out-String
+    $DecompiledDir = Join-Path $TempDir "decompiled"
+    bun install @andrewgross/bun-decompile --silent
+    $decompileOutput = bunx @andrewgross/bun-decompile $LinuxBinary --output $DecompiledDir 2>&1 | Out-String
 
-    $DecompiledDir = Join-Path $TempDir "decompiled\bundled"
     if (-not (Test-Path $DecompiledDir)) {
+        Write-Host $decompileOutput
         Write-Error "Failed to decompile the CodeRabbit binary."
     }
 
@@ -254,21 +255,17 @@ try {
     Set-Location $DecompiledDir
 
     $EntryPoint = $null
-    if ($decompileOutput -match "Entry point:\s*[\/\\]?(.+\.js)") {
-        $candidate = $Matches[1].Trim()
-        if (Test-Path (Join-Path $DecompiledDir $candidate)) {
-            $EntryPoint = $candidate
-        }
+    # bun-decompile normalizes the entrypoint to index.js unless --no-normalize is passed.
+    foreach ($name in @("index.js", "cli.js", "main.js")) {
+        if (Test-Path (Join-Path $DecompiledDir $name)) { $EntryPoint = $name; break }
     }
-    
+
     if (-not $EntryPoint) {
-        Write-Host "  [~] Could not auto-detect entry point. Attempting fallbacks..." -ForegroundColor DarkYellow
-        foreach ($name in @("cli.js", "index.js", "main.js")) {
-            if (Test-Path (Join-Path $DecompiledDir $name)) { $EntryPoint = $name; break }
-        }
+        Write-Host "  [~] Could not auto-detect entry point. Falling back to largest .js file..." -ForegroundColor DarkYellow
     }
     if (-not $EntryPoint) {
         $EntryPoint = Get-ChildItem $DecompiledDir -Filter "*.js" -File |
+                      Sort-Object Length -Descending |
                       Select-Object -First 1 -ExpandProperty Name
     }
     if (-not $EntryPoint) {
