@@ -227,11 +227,26 @@ try {
     # --- 4. Decompile Binary ---
     Write-Host "`n[*] Unpacking CodeRabbit bundle natively..."
     Set-Location $TempDir
-    bun install @shepherdjerred/bun-decompile --silent
-    $decompileOutput = bunx @shepherdjerred/bun-decompile $LinuxBinary 2>&1 | Out-String
+    # Pinned to an exact tested version: a floating spec would silently pull new
+    # decompiler code into the binary this script compiles and installs.
+    $DecompilerPackage = "@andrewgross/bun-decompile@0.1.1"
+    $DecompiledDir = Join-Path $TempDir "decompiled"
 
-    $DecompiledDir = Join-Path $TempDir "decompiled\bundled"
+    # $TempDir survives a re-run for the same version, so clear any previous
+    # output first; otherwise a failed decompile leaves stale files that pass
+    # the Test-Path check below and get compiled instead.
+    if (Test-Path $DecompiledDir) {
+        Remove-Item -Path $DecompiledDir -Recurse -Force
+    }
+
+    $decompileOutput = bunx $DecompilerPackage $LinuxBinary --output $DecompiledDir 2>&1 | Out-String
+
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host $decompileOutput
+        Write-Error "bun-decompile exited with code $LASTEXITCODE."
+    }
     if (-not (Test-Path $DecompiledDir)) {
+        Write-Host $decompileOutput
         Write-Error "Failed to decompile the CodeRabbit binary."
     }
 
@@ -253,34 +268,27 @@ try {
     Write-Host "`n[*] Compiling native Windows executable..."
     Set-Location $DecompiledDir
 
-    $EntryPoint = $null
-    if ($decompileOutput -match "Entry point:\s*[\/\\]?(.+\.js)") {
-        $candidate = $Matches[1].Trim()
-        if (Test-Path (Join-Path $DecompiledDir $candidate)) {
-            $EntryPoint = $candidate
-        }
-    }
-    
-    if (-not $EntryPoint) {
-        Write-Host "  [~] Could not auto-detect entry point. Attempting fallbacks..." -ForegroundColor DarkYellow
-        foreach ($name in @("cli.js", "index.js", "main.js")) {
-            if (Test-Path (Join-Path $DecompiledDir $name)) { $EntryPoint = $name; break }
-        }
-    }
-    if (-not $EntryPoint) {
-        $EntryPoint = Get-ChildItem $DecompiledDir -Filter "*.js" -File |
-                      Select-Object -First 1 -ExpandProperty Name
-    }
-    if (-not $EntryPoint) {
-        Write-Error "Could not determine entry point JS file in decompiled output."
+    # bun-decompile normalizes the entrypoint to index.js unless --no-normalize
+    # is passed, so that name is authoritative. Every other .js file in the
+    # output is a bundled chunk; picking one by size or name would compile an
+    # arbitrary dependency into coderabbit.exe, so fail instead of guessing.
+    $EntryPoint = "index.js"
+    if (-not (Test-Path (Join-Path $DecompiledDir $EntryPoint))) {
+        Write-Host "  [!] Decompiled output has no $EntryPoint entry point." -ForegroundColor Red
+        Write-Host "   [~] Please inspect $DecompiledDir and report an issue at https://github.com/Sukarth/CodeRabbit-Windows/issues if this was unexpected."
+        Write-Error "Could not locate the bundle entry point."
     }
 
-    Write-Host "  [~] Using entry point: $EntryPoint" -ForegroundColor DarkYellow
+    Write-Host "  [~] Using entry point: $EntryPoint"
 
-    bun install --silent
-    bun build $EntryPoint --compile --target=bun-windows-x64 --outfile=$ExePath
+    if (Test-Path (Join-Path $DecompiledDir "package.json")) {
+        bun install --silent
+    }
+
+    $buildOutput = bun build $EntryPoint --compile --target=bun-windows-x64 --outfile=$ExePath 2>&1 | Out-String
 
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path $ExePath)) {
+        Write-Host $buildOutput.TrimEnd()
         Write-Error "Compilation failed: bun exited with code $LASTEXITCODE and no executable was produced."
     }
 
