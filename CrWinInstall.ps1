@@ -274,15 +274,21 @@ try {
     # arbitrary dependency into coderabbit.exe, so fail instead of guessing.
     $EntryPoint = "index.js"
     if (-not (Test-Path (Join-Path $DecompiledDir $EntryPoint))) {
-        Write-Error "Decompiled output has no $EntryPoint entry point; refusing to guess one. Inspect $DecompiledDir."
+        Write-Host "  [!] Decompiled output has no $EntryPoint entry point." -ForegroundColor Red
+        Write-Host "   [~] Please inspect $DecompiledDir and report an issue at https://github.com/Sukarth/CodeRabbit-Windows/issues if this was unexpected."
+        Write-Error "Could not locate the bundle entry point."
     }
 
-    Write-Host "  [~] Using entry point: $EntryPoint" -ForegroundColor DarkYellow
+    Write-Host "  [~] Using entry point: $EntryPoint"
 
-    bun install --silent
-    bun build $EntryPoint --compile --target=bun-windows-x64 --outfile=$ExePath
+    if (Test-Path (Join-Path $DecompiledDir "package.json")) {
+        bun install --silent
+    }
+
+    $buildOutput = bun build $EntryPoint --compile --target=bun-windows-x64 --outfile=$ExePath 2>&1 | Out-String
 
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path $ExePath)) {
+        Write-Host $buildOutput.TrimEnd()
         Write-Error "Compilation failed: bun exited with code $LASTEXITCODE and no executable was produced."
     }
 
