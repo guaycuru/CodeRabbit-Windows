@@ -114,6 +114,23 @@ require('fs').writeFileSync('$jsDest', Buffer.from(buf));
 
 # ---------------------------------------------------------------------------
 
+# Returns "" for any exe that cannot report a version. Under Windows
+# PowerShell 5.1 with ErrorActionPreference = 'Stop', a native command that
+# writes to stderr or fails to start throws instead of returning, which would
+# abort the script before a broken install could be replaced.
+function Get-ExeVersion {
+    param([string]$Path)
+
+    $ErrorActionPreference = 'Continue'
+    try {
+        $output = & $Path --version 2>$null
+        if ($LASTEXITCODE -ne 0) { return "" }
+        return "$output".Trim()
+    } catch {
+        return ""
+    }
+}
+
 function Show-Banner {
     Write-Host "==========================================================================" -ForegroundColor Blue
     $banner = @"
@@ -142,7 +159,7 @@ $LatestVersionUrl = "https://cli.coderabbit.ai/releases/latest/VERSION"
 $LatestVersion    = Invoke-DownloadString -Uri $LatestVersionUrl
 
 if (Test-Path $ExePath) {
-    $CurrentVersion = "$(& $ExePath --version 2>&1)".Trim()
+    $CurrentVersion = Get-ExeVersion -Path $ExePath
 
     if (-not $CurrentVersion) {
         Write-Host "Existing install is broken (no version reported). Reinstalling " -NoNewline
@@ -353,9 +370,11 @@ for (let i = 0; i < metaLength / CHUNK_SIZE; i++) {
 
     Write-Host "  [~] Using entry point: $EntryPoint" -ForegroundColor DarkYellow
 
-    bun install --silent
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "bun install failed with exit code $LASTEXITCODE."
+    if (Test-Path (Join-Path $DecompiledDir "package.json")) {
+        bun install --silent
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "bun install failed with exit code $LASTEXITCODE."
+        }
     }
     bun build $EntryPoint --compile --target=bun-windows-x64 --outfile=$ExePath
 
@@ -363,7 +382,7 @@ for (let i = 0; i < metaLength / CHUNK_SIZE; i++) {
         Write-Error "Compilation failed: bun exited with code $LASTEXITCODE and no executable was produced."
     }
 
-    $CompiledVersion = "$(& $ExePath --version 2>&1)".Trim()
+    $CompiledVersion = Get-ExeVersion -Path $ExePath
     if ($CompiledVersion -ne $LatestVersion) {
         Write-Host ""
         Write-Host "  [!] Version mismatch after compilation!" -ForegroundColor Red
