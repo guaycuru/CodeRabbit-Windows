@@ -293,7 +293,7 @@ const slice = (off, len) => {
   const start = section.offset + modulesStart + off;
   return buf.subarray(start, start + len);
 };
-const looksUtf16 = (b) => b.length >= 8 && b.length % 2 === 0 && b[1] === 0 && b[3] === 0 && b[5] === 0 && b[7] === 0;
+const ENCODINGS = { 0: "binary", 1: "latin1", 2: "utf16le" };
 
 for (let i = 0; i < metaLength / CHUNK_SIZE; i++) {
   const m = modulesStart + metaOffset + i * CHUNK_SIZE;
@@ -301,6 +301,8 @@ for (let i = 0; i < metaLength / CHUNK_SIZE; i++) {
   if (!path.startsWith("/$bunfs/root/")) throw new Error(`unexpected module path: ${path}`);
   const raw = slice(v.getUint32(m + 8, true), v.getUint32(m + 12, true));
   if (raw.length === 0) throw new Error(`module ${path} is empty`);
+  const encoding = ENCODINGS[v.getUint8(m + 48)];
+  if (!encoding) throw new Error(`module ${path} has unsupported encoding ${v.getUint8(m + 48)}`);
   const rel = i === entryId ? "index.js" : path.slice("/$bunfs/root/".length);
   const root = resolve(outDir);
   const dest = resolve(root, rel);
@@ -309,8 +311,8 @@ for (let i = 0; i < metaLength / CHUNK_SIZE; i++) {
     throw new Error(`module path escapes the output directory: ${path}`);
   }
   mkdirSync(dirname(dest), { recursive: true });
-  writeFileSync(dest, looksUtf16(raw) ? raw.toString("utf16le") : raw);
-  console.log(`  ${rel} (${raw.length} bytes${looksUtf16(raw) ? ", UTF-16" : ""})`);
+  writeFileSync(dest, encoding === "binary" ? raw : raw.toString(encoding));
+  console.log(`  ${rel} (${raw.length} bytes, ${encoding})`);
 }
 '@
 
@@ -352,6 +354,9 @@ for (let i = 0; i < metaLength / CHUNK_SIZE; i++) {
     Write-Host "  [~] Using entry point: $EntryPoint" -ForegroundColor DarkYellow
 
     bun install --silent
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "bun install failed with exit code $LASTEXITCODE."
+    }
     bun build $EntryPoint --compile --target=bun-windows-x64 --outfile=$ExePath
 
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path $ExePath)) {
