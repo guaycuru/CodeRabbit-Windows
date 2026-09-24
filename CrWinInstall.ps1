@@ -248,7 +248,7 @@ try {
     $ExtractorPath = Join-Path $TempDir "extract-bun-payload.js"
     Set-Content -Path $ExtractorPath -Encoding ASCII -Value @'
 import { readFileSync, writeFileSync, mkdirSync } from "fs";
-import { join, dirname } from "path";
+import { resolve, relative, isAbsolute, dirname, sep } from "path";
 
 const [binaryPath, outDir] = process.argv.slice(2);
 const buf = readFileSync(binaryPath);
@@ -302,7 +302,12 @@ for (let i = 0; i < metaLength / CHUNK_SIZE; i++) {
   const raw = slice(v.getUint32(m + 8, true), v.getUint32(m + 12, true));
   if (raw.length === 0) throw new Error(`module ${path} is empty`);
   const rel = i === entryId ? "index.js" : path.slice("/$bunfs/root/".length);
-  const dest = join(outDir, rel);
+  const root = resolve(outDir);
+  const dest = resolve(root, rel);
+  const inside = relative(root, dest);
+  if (!inside || inside === ".." || inside.startsWith(".." + sep) || isAbsolute(inside)) {
+    throw new Error(`module path escapes the output directory: ${path}`);
+  }
   mkdirSync(dirname(dest), { recursive: true });
   writeFileSync(dest, looksUtf16(raw) ? raw.toString("utf16le") : raw);
   console.log(`  ${rel} (${raw.length} bytes${looksUtf16(raw) ? ", UTF-16" : ""})`);
